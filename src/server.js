@@ -104,9 +104,14 @@ app.post('/api/game/:id/move', (req, res) => {
   const col = Number(req.body.column);
   if (col < 0 || col > 6) return res.status(400).json({ error: 'Invalid column' });
 
-  // Player making the move = whoever's turn it is
+  // Determine which player slot is making the move based on currentPlayer
   const playerNum = g.currentPlayer; // 1 (red/local) or 2 (yellow/opponent)
   const playerIdx = playerNum === 1 ? 0 : 1;
+
+  if (g.players[playerIdx] === null && req.body.playerName) {
+    // Auto-register: if the current player hasn't joined yet, add them
+    g.players[playerIdx] = req.body.playerName;
+  }
 
   if (g.players[playerIdx] === null) return res.status(400).json({ error: 'Player not joined' });
 
