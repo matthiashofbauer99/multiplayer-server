@@ -21,15 +21,17 @@ const generateJoinCode = () => {
 
 const createGame = () => {
   const id = nextId++;
+  // Randomly decide who starts (1 = Red/creator, 2 = Yellow/joiner)
+  const starter = Math.random() < 0.5 ? 1 : 2;
   const game = {
-    id,
-    joinCode: generateJoinCode(),
+    id, joinCode: generateJoinCode(),
     players: [null, null],
     board: Array.from({ length: 6 }, () => Array(7).fill(0)),
-    currentPlayer: 1,
+    currentPlayer: starter,
     status: 'waiting',
     winner: null,
-    moveCount: 0
+    moveCount: 0,
+    nextStarter: 0  // 0 = not set, 1 = Red starts next, 2 = Yellow starts next
   };
   games.set(id, game);
   return game;
@@ -79,9 +81,9 @@ app.post('/api/game/join', (req, res) => {
       g.players[0] = g.players[0] || 'Player 1'; // Creator (implicit)
       g.players[1] = name || 'Player 2';
       g.status = 'active';
-      g.currentPlayer = 1; // Creator (Player 1) goes first
+      // currentPlayer is already randomized from createGame
 
-      return res.json({ gameId: g.id, joinCode: g.joinCode, status: g.status });
+      return res.json({ gameId: g.id, joinCode: g.joinCode, status: g.status, currentPlayer: g.currentPlayer });
     }
   }
   res.status(404).json({ error: 'Game not found' });
@@ -94,7 +96,8 @@ app.get('/api/game/:id', (req, res) => {
   res.json({
     id: g.id, joinCode: g.joinCode, players: g.players,
     board: g.board, currentPlayer: g.currentPlayer,
-    status: g.status, winner: g.winner, moveCount: g.moveCount
+    status: g.status, winner: g.winner, moveCount: g.moveCount,
+    nextStarter: g.nextStarter
   });
 });
 
@@ -131,9 +134,13 @@ app.post('/api/game/:id/move', (req, res) => {
   let winner = null;
   if (checkWin(g.board, playerNum)) {
     g.status = 'finished';
+    g.winner = playerNum;
+    g.nextStarter = playerNum === 1 ? 2 : 1; // loser starts next
     winner = g.players[playerIdx];
   } else if (g.moveCount >= 42) {
     g.status = 'finished';
+    g.winner = 0; // draw
+    g.nextStarter = Math.random() < 0.5 ? 1 : 2; // random next
   } else {
     g.currentPlayer = g.currentPlayer === 1 ? 2 : 1;
   }
