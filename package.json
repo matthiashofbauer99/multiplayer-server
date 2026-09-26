@@ -1,0 +1,13 @@
+{
+  "name": "multiplayer-server",
+  "version": "1.0.0",
+  "description": "REST API multiplayer backend for Connect 4",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "cors": "^2.8.5"
+  }
+}
