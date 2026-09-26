@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: multiplayer-server
+    envVars:
+      - key: NODE_ENV
+        value: production
+    dockerfilePath: ./Dockerfile
+    regions:
+      - scj
