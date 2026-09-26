@@ -55,6 +55,9 @@ const checkWin = (board, piece) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
+// Root route for Render health checks
+app.get('/', (req, res) => res.json({ status: 'ok', service: 'connect4-multiplayer' }));
+
 // Create game
 app.post('/api/game', (req, res) => {
   const game = createGame();
