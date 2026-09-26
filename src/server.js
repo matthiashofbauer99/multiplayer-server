@@ -22,7 +22,7 @@ const generateJoinCode = () => {
 const createGame = () => {
   const id = nextId++;
   // Randomly decide who starts (1 = Red/creator, 2 = Yellow/joiner)
-  const starter = Math.random() < 0.5 ? 1 : 2;
+  const starter = Math.floor(Math.random() * 2) + 1;
   const game = {
     id, joinCode: generateJoinCode(),
     players: [null, null],
@@ -31,7 +31,7 @@ const createGame = () => {
     status: 'waiting',
     winner: null,
     moveCount: 0,
-    nextStarter: 0  // 0 = not set, 1 = Red starts next, 2 = Yellow starts next
+    nextStarter: 0
   };
   games.set(id, game);
   return game;
@@ -57,17 +57,15 @@ const checkWin = (board, piece) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-// Root route for Render health checks
 app.get('/', (req, res) => res.json({ status: 'ok', service: 'connect4-multiplayer' }));
 
-// Create game
+// Create game — creator gets Player 1 (Red)
 app.post('/api/game', (req, res) => {
   const game = createGame();
-  res.json({ gameId: game.id, joinCode: game.joinCode, status: game.status });
+  res.json({ gameId: game.id, joinCode: game.joinCode, status: game.status, currentPlayer: game.currentPlayer, myPlayerNum: 1 });
 });
 
-// Join by code — joiner always becomes Player 2 (slot 1)
-// Slot 0 is reserved for the game creator who never explicitly joins
+// Join by code — joiner becomes Player 2 (Yellow)
 app.post('/api/game/join', (req, res) => {
   const { joinCode, name } = req.body;
   if (!joinCode) return res.status(400).json({ error: 'joinCode required' });
@@ -77,13 +75,14 @@ app.post('/api/game/join', (req, res) => {
       if (g.status !== 'waiting') return res.status(400).json({ error: 'Game not waiting' });
       if (g.players[1] !== null) return res.status(400).json({ error: 'Game full' });
 
-      // Assign joiner as Player 2 (opponent), and fill slot 0 as the creator
-      g.players[0] = g.players[0] || 'Player 1'; // Creator (implicit)
+      g.players[0] = g.players[0] || 'Player 1';
       g.players[1] = name || 'Player 2';
       g.status = 'active';
-      // currentPlayer is already randomized from createGame
 
-      return res.json({ gameId: g.id, joinCode: g.joinCode, status: g.status, currentPlayer: g.currentPlayer });
+      return res.json({
+        gameId: g.id, joinCode: g.joinCode, status: g.status,
+        currentPlayer: g.currentPlayer, myPlayerNum: 2
+      });
     }
   }
   res.status(404).json({ error: 'Game not found' });
@@ -101,7 +100,7 @@ app.get('/api/game/:id', (req, res) => {
   });
 });
 
-// Make a move — player determined by currentPlayer (player 1 = local/red)
+// Make a move
 app.post('/api/game/:id/move', (req, res) => {
   const g = games.get(Number(req.params.id));
   if (!g) return res.status(404).json({ error: 'Not found' });
@@ -110,18 +109,14 @@ app.post('/api/game/:id/move', (req, res) => {
   const col = Number(req.body.column);
   if (col < 0 || col > 6) return res.status(400).json({ error: 'Invalid column' });
 
-  // Determine which player slot is making the move based on currentPlayer
-  const playerNum = g.currentPlayer; // 1 (red/local) or 2 (yellow/opponent)
+  const playerNum = g.currentPlayer;
   const playerIdx = playerNum === 1 ? 0 : 1;
 
   if (g.players[playerIdx] === null && req.body.playerName) {
-    // Auto-register: if the current player hasn't joined yet, add them
     g.players[playerIdx] = req.body.playerName;
   }
-
   if (g.players[playerIdx] === null) return res.status(400).json({ error: 'Player not joined' });
 
-  // Find lowest empty row in column
   let row = -1;
   for (let r = 5; r >= 0; r--) {
     if (g.board[r][col] === 0) { row = r; break; }
@@ -135,22 +130,39 @@ app.post('/api/game/:id/move', (req, res) => {
   if (checkWin(g.board, playerNum)) {
     g.status = 'finished';
     g.winner = playerNum;
-    g.nextStarter = playerNum === 1 ? 2 : 1; // loser starts next
+    g.nextStarter = playerNum === 1 ? 2 : 1;
     winner = g.players[playerIdx];
   } else if (g.moveCount >= 42) {
     g.status = 'finished';
-    g.winner = 0; // draw
-    g.nextStarter = Math.random() < 0.5 ? 1 : 2; // random next
+    g.winner = 0;
+    g.nextStarter = Math.floor(Math.random() * 2) + 1;
   } else {
     g.currentPlayer = g.currentPlayer === 1 ? 2 : 1;
   }
 
   res.json({
-    success: true,
-    board: g.board,
-    currentPlayer: g.currentPlayer,
-    status: g.status,
-    winner
+    success: true, board: g.board, currentPlayer: g.currentPlayer,
+    status: g.status, winner, nextStarter: g.nextStarter
+  });
+});
+
+// Restart / rematch — loser starts, board clears
+app.post('/api/game/:id/restart', (req, res) => {
+  const g = games.get(Number(req.params.id));
+  if (!g) return res.status(404).json({ error: 'Not found' });
+  if (g.status !== 'finished') return res.status(400).json({ error: 'Game not finished' });
+
+  const starter = g.nextStarter || (Math.floor(Math.random() * 2) + 1);
+  g.board = Array.from({ length: 6 }, () => Array(7).fill(0));
+  g.currentPlayer = starter;
+  g.status = 'active';
+  g.winner = null;
+  g.moveCount = 0;
+  g.nextStarter = 0;
+
+  res.json({
+    success: true, board: g.board, currentPlayer: g.currentPlayer,
+    status: g.status, nextStarter: g.nextStarter
   });
 });
 
@@ -160,7 +172,7 @@ app.delete('/api/game/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// Handle WebSocket upgrade requests — reject them so Render's proxy doesn't get confused
+// Reject WebSocket upgrades
 server.on('upgrade', (req, socket, head) => {
   socket.write('HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nWebSocket not supported\r\n');
   socket.end();
